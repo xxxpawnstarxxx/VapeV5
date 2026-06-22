@@ -76,6 +76,9 @@ local mainapi = {
     RainbowTable   = {},
     Notifications  = { Enabled = true },
     GUIVisible     = true,
+    -- Text GUI / arraylist watermark (bottom-right list of enabled modules)
+    TextGUI        = { Enabled = true, Sort = "Alphabetical", Background = false, Suffix = false },
+    CustomText     = {},   -- extra user lines shown in the arraylist
     -- internal
     Drawings       = {},   -- every drawing object, for cleanup
     HitTargets     = {},   -- {id = {bounds, callbacks, hovered, pressed}}
@@ -541,6 +544,7 @@ local function startRenderLoop()
         pcall(updateHitTesting)
         pcall(updateLayouts)
         pcall(updateRainbow)
+        if mainapi._updateArraylist then pcall(mainapi._updateArraylist) end
     end)
 end
 
@@ -695,10 +699,32 @@ function mainapi:UpdateGUI(hue, sat, val)
                     local h2 = (hue - (entry.index * 0.075)) % 1
                     local hs, ss, vs = self:Color(h2)
                     entry.obj.Color = Color3.fromHSV(hs, ss, vs)
+                -- Enabled-module row background. In rainbow mode each row gets a
+                -- per-index hue (the flowing gradient look from VapeV4); otherwise
+                -- it's a solid fill of the current GUI accent color.
+                elseif entry.kind == "rowbg" then
+                    if self.GUIColor.Rainbow then
+                        local h2 = (hue - (entry.index * 0.075)) % 1
+                        local hs, ss, vs = self:Color(h2)
+                        entry.obj.Color = Color3.fromHSV(hs, ss, vs)
+                    else
+                        entry.obj.Color = Color3.fromHSV(hue, sat, val)
+                    end
+                -- Text drawn on top of a colored row needs a contrasting color so
+                -- it stays readable on bright backgrounds.
+                elseif entry.kind == "rowtext" then
+                    if self.GUIColor.Rainbow then
+                        local h2 = (hue - (entry.index * 0.075)) % 1
+                        local hs, ss, vs = self:Color(h2)
+                        entry.obj.Color = self:TextColor(hs, ss, vs)
+                    else
+                        entry.obj.Color = self:TextColor(hue, sat, val)
+                    end
                 end
             end)
         end
     end
+    if self._updateArraylist then pcall(self._updateArraylist) end
 end
 
 function mainapi:registerThemed(obj, kind, index)
@@ -815,6 +841,149 @@ function mainapi:CreateNotification(title, text, duration, ntype)
             tweenProperty(e.progress, "Position", Vector2.new(e.targetX + 2, newY + e.height - 4), 0.3, Easing.Linear)
         end
     end)
+end
+
+-- ============================================================
+-- 15b. TEXT GUI / ARRAYLIST WATERMARK
+-- ============================================================
+-- A bottom/top-right list of every currently-enabled module (plus any custom
+-- text lines). Each entry is colored with the GUI accent, or a per-index
+-- rainbow hue when Rainbow is on — the classic VapeV4 arraylist look.
+local arraylist = { lines = {}, title = nil, titleSub = nil, bg = nil, built = false }
+local ARRAY_POOL = 60
+
+local function measureText(obj, fallback)
+    local ok, b = pcall(function() return obj.TextBounds end)
+    if ok and b and b.X and b.X > 0 then return b.X end
+    return fallback or (#tostring(obj.Text) * 7)
+end
+
+function mainapi:CreateArraylist()
+    if arraylist.built then return end
+    arraylist.built = true
+
+    -- optional translucent panel behind the lines
+    arraylist.bg = Draw("Square", {
+        Size = Vector2.new(0, 0), Position = Vector2.new(0, 0),
+        Color = color.Dark(uipallet.Main, 0.04), Filled = true,
+        Transparency = 0.45, ZIndex = 40, Visible = false,
+    })
+
+    -- "VAPE" + "V4" header
+    arraylist.title = Draw("Text", {
+        Text = "VAPE", Position = Vector2.new(0, 0), Size = 18,
+        Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1,
+        ZIndex = 42, Visible = false, Center = false,
+    })
+    arraylist.titleSub = Draw("Text", {
+        Text = "V4", Position = Vector2.new(0, 0), Size = 18,
+        Font = Drawing.Fonts.Plex, Color = uipallet.Text, Transparency = 1,
+        ZIndex = 42, Visible = false, Center = false,
+    })
+    self:registerThemed(arraylist.title, "accent")
+
+    for i = 1, ARRAY_POOL do
+        local txt = Draw("Text", {
+            Text = "", Position = Vector2.new(0, 0), Size = 15,
+            Font = Drawing.Fonts.UI, Color = accentColor(), Transparency = 1,
+            ZIndex = 42, Visible = false, Center = false,
+        })
+        local bar = Draw("Square", {
+            Size = Vector2.new(2, 16), Position = Vector2.new(0, 0),
+            Color = accentColor(), Filled = true, Transparency = 1,
+            ZIndex = 42, Visible = false,
+        })
+        arraylist.lines[i] = { txt = txt, bar = bar }
+    end
+
+    self._updateArraylist = function() mainapi:_renderArraylist() end
+end
+
+-- Gather + sort the strings the arraylist should display.
+function mainapi:_arraylistEntries()
+    local entries = {}
+    for _, mod in pairs(self.Modules) do
+        if mod.Enabled and mod.Category ~= "Settings" then
+            entries[#entries + 1] = mod.Name .. (mod.ExtraText and (" " .. tostring(mod.ExtraText)) or "")
+        end
+    end
+    for _, line in ipairs(self.CustomText) do
+        if line and line ~= "" then entries[#entries + 1] = line end
+    end
+    local sort = self.TextGUI.Sort
+    if sort == "Length" then
+        table.sort(entries, function(a, b) return #a > #b end)
+    elseif sort == "Reverse Length" then
+        table.sort(entries, function(a, b) return #a < #b end)
+    else
+        table.sort(entries, function(a, b) return a:lower() < b:lower() end)
+    end
+    return entries
+end
+
+function mainapi:_renderArraylist()
+    if not arraylist.built then return end
+    local vp = Camera.ViewportSize
+    local margin = 8
+    local lineH = 18
+    local rightX = vp.X - margin
+
+    local enabled = self.TextGUI.Enabled
+    -- Header
+    local titleW = enabled and (measureText(arraylist.title, 48) + 4 + measureText(arraylist.titleSub, 22)) or 0
+    local startY = 10
+    if arraylist.title then
+        arraylist.title.Visible = enabled
+        arraylist.titleSub.Visible = enabled
+        if enabled then
+            local subW = measureText(arraylist.titleSub, 22)
+            local mainW = measureText(arraylist.title, 48)
+            arraylist.titleSub.Position = Vector2.new(rightX - subW, startY)
+            arraylist.title.Position = Vector2.new(rightX - subW - 2 - mainW, startY)
+        end
+    end
+
+    local entries = enabled and self:_arraylistEntries() or {}
+    local maxW = titleW
+    for i, line in ipairs(arraylist.lines) do
+        local data = entries[i]
+        if data then
+            local y = startY + 26 + (i - 1) * lineH
+            line.txt.Text = data
+            local w = measureText(line.txt, #data * 7)
+            if w > maxW then maxW = w end
+            line.txt.Position = Vector2.new(rightX - w - 6, y)
+            line.bar.Position = Vector2.new(rightX - 3, y)
+            line.bar.Size = Vector2.new(2, 16)
+
+            -- per-line color
+            local col
+            if self.GUIColor.Rainbow then
+                local h2 = (self.GUIColor.Hue - ((i - 1) * 0.075)) % 1
+                col = Color3.fromHSV(self:Color(h2))
+            else
+                col = accentColor()
+            end
+            line.txt.Color = col
+            line.bar.Color = col
+            line.txt.Visible = true
+            line.bar.Visible = true
+        else
+            line.txt.Visible = false
+            line.bar.Visible = false
+        end
+    end
+
+    -- optional background panel
+    if arraylist.bg then
+        local show = enabled and self.TextGUI.Background and #entries > 0
+        arraylist.bg.Visible = show
+        if show then
+            local totalH = 26 + #entries * lineH + 4
+            arraylist.bg.Size = Vector2.new(maxW + 16, totalH)
+            arraylist.bg.Position = Vector2.new(rightX - maxW - 14, startY - 4)
+        end
+    end
 end
 
 -- ============================================================
@@ -1258,24 +1427,33 @@ function mainapi:CreateCategory(settings)
 
         function moduleapi:Toggle(silent)
             self.Enabled = not self.Enabled
-            local rainbow = mainapi.GUIColor.Rainbow
-            local ac = rainbow and Color3.fromHSV(mainapi:Color((mainapi.GUIColor.Hue - (self.Index * 0.075)) % 1)) or accentColor()
             if self.Enabled then
-                tweenProperty(rowText, "Color", ac, 0.16)
-                self:registerThemedFor(rowText)
+                -- VapeV4 look: the whole row fills with the accent (or per-row
+                -- rainbow) color and the label flips to a contrasting tone.
+                self:registerThemedRow()
+                mainapi:UpdateGUI(mainapi.GUIColor.Hue, mainapi.GUIColor.Sat, mainapi.GUIColor.Value)
             else
-                self:unregisterThemedFor()
+                self:unregisterThemedRow()
+                tweenProperty(rowBg, "Color", uipallet.Main, 0.16)
                 tweenProperty(rowText, "Color", color.Dark(uipallet.Text, 0.16), 0.16)
             end
+            if mainapi._updateArraylist then pcall(mainapi._updateArraylist) end
             moduleSettings.Function(self.Enabled)
         end
 
-        function moduleapi:registerThemedFor(drawObj)
-            self._themedDraw = drawObj
-            mainapi:registerThemed(drawObj, "rainbow", self.Index)
+        -- Register both the row background and its label as themed so they track
+        -- the GUI color / rainbow each frame while the module is enabled.
+        function moduleapi:registerThemedRow()
+            self:unregisterThemedRow()
+            self._themedRow = { rowBg, rowText }
+            mainapi:registerThemed(rowBg, "rowbg", self.Index)
+            mainapi:registerThemed(rowText, "rowtext", self.Index)
         end
-        function moduleapi:unregisterThemedFor()
-            if self._themedDraw then mainapi:unregisterThemed(self._themedDraw) self._themedDraw = nil end
+        function moduleapi:unregisterThemedRow()
+            if self._themedRow then
+                for _, o in ipairs(self._themedRow) do mainapi:unregisterThemed(o) end
+                self._themedRow = nil
+            end
         end
 
         function moduleapi:SetBind(keys)
@@ -2191,7 +2369,12 @@ function mainapi:CreateSettings()
     interface:CreateToggle({
         Name = "Rainbow",
         Default = self.GUIColor.Rainbow,
-        Function = function(on) self.GUIColor.Rainbow = on end,
+        Function = function(on)
+            self.GUIColor.Rainbow = on
+            -- Refresh immediately so enabled-module backgrounds and the
+            -- arraylist switch between solid accent and rainbow right away.
+            self:UpdateGUI(self.GUIColor.Hue, self.GUIColor.Sat, self.GUIColor.Value)
+        end,
     })
 
     local menuKey = interface:CreateKeybind({
@@ -2209,6 +2392,53 @@ function mainapi:CreateSettings()
         Name = "Notifications",
         Default = self.Notifications.Enabled,
         Function = function(on) self.Notifications.Enabled = on end,
+    })
+
+    -- ---- Text GUI module ----
+    local textgui = settings:CreateModule({ Name = "Text GUI", Tooltip = "Arraylist of enabled modules" })
+
+    textgui:CreateToggle({
+        Name = "Enabled",
+        Default = self.TextGUI.Enabled,
+        Function = function(on)
+            self.TextGUI.Enabled = on
+            self:_renderArraylist()
+        end,
+    })
+
+    textgui:CreateDropdown({
+        Name = "Sort",
+        List = { "Alphabetical", "Length", "Reverse Length" },
+        Default = self.TextGUI.Sort,
+        Function = function(v)
+            self.TextGUI.Sort = v
+            self:_renderArraylist()
+        end,
+    })
+
+    textgui:CreateToggle({
+        Name = "Background",
+        Default = self.TextGUI.Background,
+        Function = function(on)
+            self.TextGUI.Background = on
+            self:_renderArraylist()
+        end,
+    })
+
+    textgui:CreateTextBox({
+        Name = "Add custom text",
+        Placeholder = "Click to set (comma separated)",
+        Default = "",
+        Function = function(text)
+            self.CustomText = {}
+            for piece in tostring(text):gmatch("[^,]+") do
+                local trimmed = piece:match("^%s*(.-)%s*$")
+                if trimmed and trimmed ~= "" then
+                    table.insert(self.CustomText, trimmed)
+                end
+            end
+            self:_renderArraylist()
+        end,
     })
 
     -- ---- Config module ----
@@ -2247,6 +2477,8 @@ end
 mainapi.Loaded = true
 startRenderLoop()
 mainapi:CreateGUI()
+mainapi:CreateArraylist()
 mainapi:CreateSettings()
+mainapi:_renderArraylist()
 
 return mainapi
