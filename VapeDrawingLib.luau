@@ -92,8 +92,9 @@ local mainapi = {
 -- 4. UIPALLET / COLOR HELPERS
 -- ============================================================
 local uipallet = {
-    Main  = Color3.fromRGB(26, 25, 26),
-    Text  = Color3.fromRGB(200, 200, 200),
+    -- Clean neutral dark theme tuned to the VapeV4 reference screenshots.
+    Main  = Color3.fromRGB(22, 22, 24),
+    Text  = Color3.fromRGB(210, 210, 214),
     Font  = Drawing.Fonts.UI,
     Tween = 0.16,
 }
@@ -254,7 +255,7 @@ mainapi._DrawImage = DrawImage
 -- ============================================================
 -- 7. HIT-TEST FRAMEWORK
 -- ============================================================
-local function registerHit(bounds, callbacks)
+local function registerHit(bounds, callbacks, visObj)
     mainapi._hidCounter = mainapi._hidCounter + 1
     local id = mainapi._hidCounter
     mainapi.HitTargets[id] = {
@@ -262,6 +263,10 @@ local function registerHit(bounds, callbacks)
         callbacks = callbacks or {},
         hovered   = false,
         pressed   = false,
+        -- Optional representative drawing. When provided, the hit target is
+        -- only considered when that drawing is actually Visible. This kills
+        -- "ghost hitboxes" left behind by collapsed panels / hidden controls.
+        visObj    = visObj,
     }
     return id
 end
@@ -468,7 +473,19 @@ local function updateHitTesting()
     end
     local mouse = getMousePos()
     for _, target in pairs(mainapi.HitTargets) do
-        if type(target.bounds) == "function" then
+        -- Skip controls whose representative drawing is currently hidden, and
+        -- clear any stale hover so a hidden control can't stay "hovered".
+        local controlVisible = true
+        if target.visObj then
+            local okv, vis = pcall(function() return target.visObj.Visible end)
+            controlVisible = okv and vis == true
+        end
+        if not controlVisible then
+            if target.hovered then
+                target.hovered = false
+                if target.callbacks.onLeave then pcall(target.callbacks.onLeave) end
+            end
+        elseif type(target.bounds) == "function" then
             local ok, pos, size = pcall(target.bounds)
             if ok and pos and size then
                 local inside = pointInRect(mouse.X, mouse.Y, pos, size)
@@ -978,7 +995,20 @@ function mainapi:CreateCategory(settings)
         }
     )
 
-    categoryapi._pos = { X = 236 + sidebarIndex * 16, Y = 60 + sidebarIndex * 16 }
+    -- Tile panels side-by-side to the right of the sidebar (VapeV4 layout)
+    -- instead of stacking them at a 16px diagonal offset (which caused every
+    -- open panel to overlap into an unreadable pile). Wrap to a new row only
+    -- when the viewport runs out of horizontal room.
+    local panelStartX = (self._sidebarPos and self._sidebarPos.X or 6) + 220 + 12
+    local colW = categoryapi._panelSize.W + 8
+    local vpW = (Camera and Camera.ViewportSize and Camera.ViewportSize.X) or 1280
+    local perRow = math.max(1, math.floor((vpW - panelStartX) / colW))
+    local col = sidebarIndex % perRow
+    local rowI = math.floor(sidebarIndex / perRow)
+    categoryapi._pos = {
+        X = panelStartX + col * colW,
+        Y = 60 + rowI * (categoryapi._panelSize.H + 10),
+    }
     local panelW, panelH = categoryapi._panelSize.W, categoryapi._panelSize.H
 
     local panelBg = Draw("Square", {
@@ -1031,7 +1061,8 @@ function mainapi:CreateCategory(settings)
             onEnter = function() tweenProperty(closeText, "Color", uipallet.Text, 0.16) end,
             onLeave = function() tweenProperty(closeText, "Color", color.Light(uipallet.Main, 0.37), 0.16) end,
             onClick = function() categoryapi:Expand(false) end,
-        }
+        },
+        closeHit
     )
 
     local panelDrag = { dragging = false, offset = Vector2.new(0, 0) }
@@ -1040,7 +1071,8 @@ function mainapi:CreateCategory(settings)
         { onDown = function()
             panelDrag.dragging = true
             panelDrag.offset = getMousePos() - Vector2.new(categoryapi._pos.X, categoryapi._pos.Y)
-        end }
+        end },
+        panelBg
     )
     mainapi._draggablePanels = mainapi._draggablePanels or {}
     mainapi._draggablePanels[categoryapi] = function()
@@ -1134,6 +1166,14 @@ function mainapi:CreateCategory(settings)
         table.insert(moduleapi._drawings, bindText)
 
         local childLayout, childLayoutId = createLayout({ startY = rowY + rowH, padding = 0 })
+        -- CRITICAL: the module row drives its own children manually inside its
+        -- layoutEntry.apply (with correct expand/visibility gating). If we also
+        -- leave this child layout registered globally, updateLayouts() would
+        -- re-apply every component each frame with visible=true and no clip,
+        -- forcing all toggles/sliders/buttons of every module visible on top of
+        -- each other (the overlapping jumble bug). So unregister it from the
+        -- global layout loop while keeping the table for manual driving.
+        removeLayout(childLayoutId)
         local childrenContainer = { _drawings = {}, _visible = false, _layout = childLayout, _layoutId = childLayoutId, _totalHeight = 0 }
         moduleapi._children = childrenContainer
 
@@ -1183,7 +1223,8 @@ function mainapi:CreateCategory(settings)
                 onEnter = function() if not moduleapi.Enabled then tweenProperty(rowText, "Color", uipallet.Text, 0.16) end end,
                 onLeave = function() if not moduleapi.Enabled then tweenProperty(rowText, "Color", color.Dark(uipallet.Text, 0.16), 0.16) end end,
                 onClick = function() moduleapi:Toggle() end,
-            }
+            },
+            rowBg
         )
         table.insert(moduleapi._hitIds, rowHitId)
 
@@ -1193,7 +1234,8 @@ function mainapi:CreateCategory(settings)
                 onEnter = function() tweenProperty(rowDots, "Color", uipallet.Text, 0.16) end,
                 onLeave = function() tweenProperty(rowDots, "Color", color.Light(uipallet.Main, 0.37), 0.16) end,
                 onClick = function() moduleapi._expanded = not moduleapi._expanded end,
-            }
+            },
+            rowBg
         )
         table.insert(moduleapi._hitIds, dotsHitId)
 
@@ -1209,7 +1251,8 @@ function mainapi:CreateCategory(settings)
                         return false
                     end)
                 end,
-            }
+            },
+            bindBg
         )
         table.insert(moduleapi._hitIds, bindHitId)
 
@@ -1298,10 +1341,10 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
 
     local bg = Draw("Square", { Size = Vector2.new(rowW, rowH), Position = Vector2.new(rowX(), 0), Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
     local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 7), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local knobW, knobH = 22, 12
-    local function knobX() return rowX() + rowW - 30 end
-    local track = Draw("Square", { Size = Vector2.new(knobW, knobH), Position = Vector2.new(knobX(), 9), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
-    local knob = Draw("Circle", { Radius = 4, Position = Vector2.new(knobX() + 6, 15), Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 16 })
+    local knobW, knobH = 28, 15
+    local function knobX() return rowX() + rowW - 38 end
+    local track = Draw("Square", { Size = Vector2.new(knobW, knobH), Position = Vector2.new(knobX(), 8), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
+    local knob = Draw("Circle", { Radius = 5, Position = Vector2.new(knobX() + 7, 15), Color = Color3.fromRGB(235, 235, 238), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
 
     table.insert(optionapi._drawings, bg)
     table.insert(optionapi._drawings, label)
@@ -1315,8 +1358,8 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
             curY = y
             bg.Position = Vector2.new(rowX(), y)
             label.Position = Vector2.new(rowX() + 12, y + 7)
-            track.Position = Vector2.new(knobX(), y + 9)
-            knob.Position = Vector2.new(knobX() + (optionapi.Enabled and 14 or 6), y + 15)
+            track.Position = Vector2.new(knobX(), y + 8)
+            knob.Position = Vector2.new(knobX() + (optionapi.Enabled and 21 or 7), y + 15)
             local vis = isVisible
             bg.Visible = vis; label.Visible = vis; track.Visible = vis; knob.Visible = vis
         end,
@@ -1329,7 +1372,8 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
             onEnter = function() hovered = true if not optionapi.Enabled then tweenProperty(track, "Color", color.Light(uipallet.Main, 0.37), 0.16) end end,
             onLeave = function() hovered = false if not optionapi.Enabled then tweenProperty(track, "Color", color.Light(uipallet.Main, 0.14), 0.16) end end,
             onClick = function() optionapi:Toggle() end,
-        }
+        },
+        bg
     )
     table.insert(optionapi._hitIds, hitId)
 
@@ -1339,11 +1383,11 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
         local ac = rainbow and Color3.fromHSV(mainapi:Color((mainapi.GUIColor.Hue - (self.Index * 0.075)) % 1)) or accentColor()
         if self.Enabled then
             tweenProperty(track, "Color", ac, 0.16)
-            tweenProperty(knob, "Position", Vector2.new(knobX() + 14, knob.Position.Y), 0.16)
+            tweenProperty(knob, "Position", Vector2.new(knobX() + 21, knob.Position.Y), 0.16)
             mainapi:registerThemed(track, "rainbow", self.Index)
         else
             tweenProperty(track, "Color", hovered and color.Light(uipallet.Main, 0.37) or color.Light(uipallet.Main, 0.14), 0.16)
-            tweenProperty(knob, "Position", Vector2.new(knobX() + 6, knob.Position.Y), 0.16)
+            tweenProperty(knob, "Position", Vector2.new(knobX() + 7, knob.Position.Y), 0.16)
             mainapi:unregisterThemed(track)
         end
         optionsettings.Function(self.Enabled)
@@ -1393,7 +1437,8 @@ function mainapi._components.Button(moduleapi, optionsettings)
             onEnter = function() tweenProperty(btnBg, "Color", color.Light(uipallet.Main, 0.0875), 0.16) end,
             onLeave = function() tweenProperty(btnBg, "Color", color.Light(uipallet.Main, 0.05), 0.16) end,
             onClick = function() optionsettings.Function() end,
-        }
+        },
+        btnBg
     )
     table.insert(optionapi._hitIds, hitId)
     return optionapi
@@ -1477,7 +1522,8 @@ function mainapi._components.Slider(moduleapi, optionsettings)
         {
             onDown = function() dragging = true end,
             onUp = function() dragging = false end,
-        }
+        },
+        track
     )
     table.insert(optionapi._hitIds, hitId)
     UserInputService.InputEnded:Connect(function(input)
@@ -1571,7 +1617,8 @@ function mainapi._components.TwoSlider(moduleapi, optionsettings)
                 if math.abs(mx - minPx) <= math.abs(mx - maxPx) then draggingMin = true else draggingMax = true end
             end,
             onUp = function() draggingMin = false draggingMax = false end,
-        }
+        },
+        track
     )
     table.insert(optionapi._hitIds, hitId)
     UserInputService.InputEnded:Connect(function(input)
@@ -1662,7 +1709,8 @@ function mainapi._components.Dropdown(moduleapi, optionsettings)
             onEnter = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.0875), 0.16) end,
             onLeave = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.05), 0.16) end,
             onClick = function() optionapi._open = not optionapi._open end,
-        }
+        },
+        boxBg
     )
     table.insert(optionapi._hitIds, boxHit)
 
@@ -1675,7 +1723,8 @@ function mainapi._components.Dropdown(moduleapi, optionsettings)
                     optionapi:Set(e.item)
                     optionapi._open = false
                 end,
-            }
+            },
+            e.bg
         )
         table.insert(optionapi._hitIds, hit)
     end
@@ -1759,7 +1808,8 @@ function mainapi._components.TextBox(moduleapi, optionsettings)
                     end
                 end
             end,
-        }
+        },
+        boxBg
     )
     table.insert(optionapi._hitIds, hitId)
 
@@ -1869,7 +1919,8 @@ function mainapi._components.ColorSlider(moduleapi, optionsettings)
     -- preview click toggles open
     local prevHit = registerHit(
         function() return Vector2.new(rowX() + rowW - 32, curY + 8), Vector2.new(20, 14) end,
-        { onClick = function() optionapi._open = not optionapi._open end }
+        { onClick = function() optionapi._open = not optionapi._open end },
+        preview
     )
     table.insert(optionapi._hitIds, prevHit)
 
@@ -1888,7 +1939,8 @@ function mainapi._components.ColorSlider(moduleapi, optionsettings)
     for _, bar in ipairs(bars) do
         local hit = registerHit(
             function() return Vector2.new(rowX() + 12, bar.y - 2), Vector2.new(barW, 12) end,
-            { onDown = function() if optionapi._open then activeBar = bar end end, onUp = function() activeBar = nil end }
+            { onDown = function() if optionapi._open then activeBar = bar end end, onUp = function() activeBar = nil end },
+            bar.knob
         )
         table.insert(optionapi._hitIds, hit)
     end
@@ -1963,7 +2015,8 @@ function mainapi._components.Keybind(moduleapi, optionsettings)
                     return true
                 end)
             end,
-        }
+        },
+        keyBg
     )
     table.insert(optionapi._hitIds, hitId)
 
