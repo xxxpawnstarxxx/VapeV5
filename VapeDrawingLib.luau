@@ -175,6 +175,83 @@ local function getDrawingImage(url)
 end
 
 -- ============================================================
+-- 6b. ASSET REGISTRY (icons uploaded to GitHub)
+-- ============================================================
+-- All icons live in the VapeV5 ASSETS folder on GitHub. We build the raw
+-- URLs from a single base so the whole icon set is available by name.
+local ASSET_BASE = "https://raw.githubusercontent.com/xxxpawnstarxxx/VapeV5/refs/heads/main/ASSETS/"
+local function assetURL(name) return ASSET_BASE .. name end
+
+local Assets = {
+    -- branding / chrome
+    Logo        = assetURL("VapeLogo1.png"),
+    LogoAlt      = assetURL("vapelogo.png"),
+    Settings     = assetURL("newsettings.png"),
+    SettingsWheel = assetURL("SettingsWheel1.png"),
+    Close        = assetURL("ExitIcon1.png"),
+    CloseAlt     = assetURL("newclose.png"),
+    Dots         = assetURL("dots.png"),
+    MoreButton   = assetURL("MoreButton1.png"),
+    Expand       = assetURL("downexpand.png"),
+    Collapse     = assetURL("upcollapse.png"),
+    RightArrow   = assetURL("RightArrow.png"),
+    DownArrow    = assetURL("DownArrow.png"),
+    UpArrow      = assetURL("UpArrow.png"),
+    HoverArrow   = assetURL("HoverArrow.png"),
+    Check        = assetURL("check.png"),
+    Pencil       = assetURL("PencilIcon.png"),
+    Search       = assetURL("SearchBarIcon.png"),
+    Pin          = assetURL("PinButton.png"),
+    -- category icons
+    Combat       = assetURL("CombatIcon.png"),
+    Render       = assetURL("RenderIcon.png"),
+    Utility      = assetURL("UtilityIcon.png"),
+    World        = assetURL("WorldIcon.png"),
+    Target       = assetURL("TargetIcon1.png"),
+    Radar        = assetURL("RadarIcon1.png"),
+    Keybind      = assetURL("KeybindIcon.png"),
+    Profiles     = assetURL("ProfilesIcon.png"),
+    Friends      = assetURL("FriendsIcon.png"),
+    Discord      = assetURL("DiscordIcon.png"),
+    Rainbow      = assetURL("RainbowIcon1.png"),
+    LegitMode    = assetURL("LegitModeIcon.png"),
+    -- component art
+    ToggleBg     = assetURL("togglebg.png"),
+    ToggleFront  = assetURL("togglefront.png"),
+    ToggleDot    = assetURL("toggledot.png"),
+    SliderButton = assetURL("SliderButton1.png"),
+    SliderArrow  = assetURL("SliderArrow1.png"),
+    ColorPreview = assetURL("colorpreview.png"),
+    ColorSlider1 = assetURL("ColorSlider1.png"),
+    TextBoxBKG   = assetURL("TextBoxBKG.png"),
+    BindBackground = assetURL("BindBackground.png"),
+    DropdownNotch  = assetURL("dropdownnotch.png"),
+}
+mainapi.Assets = Assets
+
+-- Resolve an asset by friendly name OR raw url. Returns a url string or nil.
+local function resolveAsset(nameOrUrl)
+    if not nameOrUrl or nameOrUrl == "" then return nil end
+    if Assets[nameOrUrl] then return Assets[nameOrUrl] end
+    return nameOrUrl
+end
+
+-- Create an Image drawing from a (possibly remote) asset. Returns nil if the
+-- bytes can't be fetched so callers can fall back to a text/shape glyph.
+local function DrawImage(nameOrUrl, props)
+    local url = resolveAsset(nameOrUrl)
+    local data = getDrawingImage(url)
+    if not data then return nil end
+    local img = Draw("Image", props)
+    if not img then return nil end
+    -- Different executors expose raw image bytes under different fields.
+    local ok = pcall(function() img.Data = data end)
+    if not ok then pcall(function() img.Uri = url end) end
+    return img
+end
+mainapi._DrawImage = DrawImage
+
+-- ============================================================
 -- 7. HIT-TEST FRAMEWORK
 -- ============================================================
 local function registerHit(bounds, callbacks)
@@ -377,6 +454,18 @@ end
 
 local function updateHitTesting()
     if keyCapture.active then return end
+    -- Ghost-hitbox fix: when the menu is toggled off the drawing objects are
+    -- invisible but their math bounds still exist. Clear stale hover state and
+    -- bail so hidden controls can never be hovered/clicked.
+    if not mainapi.GUIVisible then
+        for _, target in pairs(mainapi.HitTargets) do
+            if target.hovered then
+                target.hovered = false
+                if target.callbacks.onLeave then pcall(target.callbacks.onLeave) end
+            end
+        end
+        return
+    end
     local mouse = getMousePos()
     for _, target in pairs(mainapi.HitTargets) do
         if type(target.bounds) == "function" then
@@ -524,6 +613,8 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     -- Mouse clicks
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         if gpe then return end
+        -- Ghost-hitbox fix: ignore clicks entirely while the GUI is hidden.
+        if not mainapi.GUIVisible then return end
         for _, target in pairs(mainapi.HitTargets) do
             if target.hovered then
                 target.pressed = true
@@ -559,6 +650,7 @@ end)
 
 UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseWheel then
+        if not mainapi.GUIVisible then return end
         local mouse = getMousePos()
         local delta = input.Position.Z
         for _, layout in pairs(mainapi.Layouts) do
@@ -613,20 +705,17 @@ function mainapi:ToggleGUI()
         end
     end
     for _, cat in pairs(self.Categories) do
-        if cat._drawings[1] then cat._drawings[1].Visible = vis end
-        if cat._drawings[2] then cat._drawings[2].Visible = vis end
-        if cat._drawings[3] then cat._drawings[3].Visible = vis end
-        if vis and cat.Expanded then
-            for i = 4, #cat._drawings do
-                pcall(function() cat._drawings[i].Visible = true end)
-            end
-            for _, mod in ipairs(cat._moduleList) do mod:_setVisible(true) end
-        else
-            for i = 4, #cat._drawings do
-                pcall(function() cat._drawings[i].Visible = false end)
-            end
-            for _, mod in ipairs(cat._moduleList) do mod:_setVisible(false) end
+        -- Sidebar entry always follows the GUI visibility.
+        for _, d in ipairs(cat._sidebarDrawings or {}) do
+            pcall(function() d.Visible = vis end)
         end
+        -- Panel + modules only show when both visible AND expanded.
+        local showPanel = vis and cat.Expanded
+        for _, d in ipairs(cat._panelDrawings or {}) do
+            pcall(function() d.Visible = showPanel end)
+        end
+        if cat._closeImg and cat._closeText then cat._closeText.Visible = false end
+        for _, mod in ipairs(cat._moduleList) do mod:_setVisible(showPanel) end
     end
 end
 
@@ -725,18 +814,51 @@ function mainapi:CreateGUI()
         Size = Vector2.new(sidebarW, headerH), Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y),
         Color = color.Dark(uipallet.Main, 0.02), Filled = true, Transparency = 1, ZIndex = 10, Visible = true,
     })
+    -- Prefer the uploaded GitHub logo image; fall back to text if it can't load.
+    local logoImg = DrawImage(Assets.Logo, {
+        Size = Vector2.new(58, 16), Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9),
+        Transparency = 1, ZIndex = 11, Visible = true,
+    })
     local logo = Draw("Text", {
         Text = "Vape", Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9),
-        Size = 16, Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1, ZIndex = 11, Visible = true,
+        Size = 16, Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1, ZIndex = 11,
+        Visible = logoImg == nil,
+    })
+    -- Settings gear button (uses the uploaded settings icon) opens the Settings panel.
+    local gearImg = DrawImage(Assets.Settings, {
+        Size = Vector2.new(16, 16), Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 9),
+        Transparency = 1, ZIndex = 12, Visible = true,
+    })
+    local gearText = Draw("Text", {
+        Text = "*", Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 8),
+        Size = 18, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43),
+        Transparency = 1, ZIndex = 12, Visible = gearImg == nil,
     })
     local versionLabel = Draw("Text", {
-        Text = "v" .. self.Version, Position = Vector2.new(self._sidebarPos.X + sidebarW - 50, self._sidebarPos.Y + 11),
-        Size = 10, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43),
-        Transparency = 1, ZIndex = 11, Visible = true,
+        Text = "v" .. self.Version, Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + headerH - 1),
+        Size = 9, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43),
+        Transparency = 1, ZIndex = 11, Visible = false,
     })
     self:registerThemed(logo, "accent")
 
-    self._clickguiRoot = { header, logo, versionLabel }
+    -- Gear hit-target: toggle the Settings category open/closed.
+    registerHit(
+        function() return Vector2.new(self._sidebarPos.X + sidebarW - 28, self._sidebarPos.Y + 7), Vector2.new(20, 20) end,
+        {
+            onEnter = function() if gearText then tweenProperty(gearText, "Color", uipallet.Text, 0.16) end end,
+            onLeave = function() if gearText then tweenProperty(gearText, "Color", color.Dark(uipallet.Text, 0.43), 0.16) end end,
+            onClick = function()
+                local s = self.Categories["Settings"]
+                if s then s:Expand(not s.Expanded) end
+            end,
+        }
+    )
+
+    self._clickguiRoot = { header, logo, versionLabel, gearText }
+    if logoImg then table.insert(self._clickguiRoot, logoImg) end
+    if gearImg then table.insert(self._clickguiRoot, gearImg) end
+    self._headerLogoImg = logoImg
+    self._headerGearImg = gearImg
     self.GUIVisible = true
 
     local dragState = { dragging = false, offset = Vector2.new(0, 0) }
@@ -754,7 +876,10 @@ function mainapi:CreateGUI()
             self._sidebarPos.Y = math.clamp(m.Y - dragState.offset.Y, 0, Camera.ViewportSize.Y - headerH)
             header.Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y)
             logo.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9)
-            versionLabel.Position = Vector2.new(self._sidebarPos.X + sidebarW - 50, self._sidebarPos.Y + 11)
+            if logoImg then logoImg.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9) end
+            if gearImg then gearImg.Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 9) end
+            gearText.Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 8)
+            versionLabel.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + headerH - 1)
             if self._sidebarEntryUpdaters then
                 for _, upd in pairs(self._sidebarEntryUpdaters) do pcall(upd) end
             end
@@ -793,26 +918,43 @@ function mainapi:CreateCategory(settings)
         Size = Vector2.new(sidebarW, entryH), Position = Vector2.new(sidebarX(), sidebarEntryY()),
         Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 10, Visible = true,
     })
+    -- Optional category icon (uploaded to GitHub). When present the label is
+    -- shifted right to make room for a 16x16 icon.
+    local entryIcon = settings.Icon and DrawImage(settings.Icon, {
+        Size = Vector2.new(16, 16), Position = Vector2.new(sidebarX() + 12, sidebarEntryY() + 12),
+        Transparency = 1, ZIndex = 11, Visible = true,
+    }) or nil
+    local textLeft = entryIcon and 36 or 12
+
     local entryText = Draw("Text", {
-        Text = settings.Name, Position = Vector2.new(sidebarX() + 12, sidebarEntryY() + 11),
+        Text = settings.Name, Position = Vector2.new(sidebarX() + textLeft, sidebarEntryY() + 11),
         Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16),
+        Transparency = 1, ZIndex = 11, Visible = true,
+    })
+    local entryArrowImg = DrawImage(Assets.RightArrow, {
+        Size = Vector2.new(10, 10), Position = Vector2.new(sidebarX() + sidebarW - 20, sidebarEntryY() + 14),
         Transparency = 1, ZIndex = 11, Visible = true,
     })
     local entryArrow = Draw("Text", {
         Text = ">", Position = Vector2.new(sidebarX() + sidebarW - 18, sidebarEntryY() + 11),
         Size = 12, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
-        Transparency = 1, ZIndex = 11, Visible = true,
+        Transparency = 1, ZIndex = 11, Visible = entryArrowImg == nil,
     })
 
-    table.insert(categoryapi._drawings, entryBg)
-    table.insert(categoryapi._drawings, entryText)
-    table.insert(categoryapi._drawings, entryArrow)
+    -- Sidebar entry drawings are tracked separately from panel drawings so
+    -- ToggleGUI / Expand can show/hide each group without fragile indexing.
+    categoryapi._sidebarDrawings = { entryBg, entryText, entryArrow }
+    if entryIcon then table.insert(categoryapi._sidebarDrawings, entryIcon) end
+    if entryArrowImg then table.insert(categoryapi._sidebarDrawings, entryArrowImg) end
+    for _, d in ipairs(categoryapi._sidebarDrawings) do table.insert(categoryapi._drawings, d) end
 
     local function updateEntryPos()
         local ex, ey = sidebarX(), sidebarEntryY()
         entryBg.Position = Vector2.new(ex, ey)
-        entryText.Position = Vector2.new(ex + 12, ey + 11)
+        if entryIcon then entryIcon.Position = Vector2.new(ex + 12, ey + 12) end
+        entryText.Position = Vector2.new(ex + textLeft, ey + 11)
         entryArrow.Position = Vector2.new(ex + sidebarW - (categoryapi.Expanded and 14 or 18), ey + 11)
+        if entryArrowImg then entryArrowImg.Position = Vector2.new(ex + sidebarW - 20, ey + 14) end
     end
     self._sidebarEntryUpdaters = self._sidebarEntryUpdaters or {}
     self._sidebarEntryUpdaters[categoryapi] = updateEntryPos
@@ -855,16 +997,20 @@ function mainapi:CreateCategory(settings)
         Size = Vector2.new(20, 20), Position = Vector2.new(categoryapi._pos.X + panelW - 22, categoryapi._pos.Y + 9),
         Color = Color3.new(0, 0, 0), Filled = true, Transparency = 0, ZIndex = 7, Visible = false,
     })
+    local closeImg = DrawImage(Assets.Close, {
+        Size = Vector2.new(12, 12), Position = Vector2.new(categoryapi._pos.X + panelW - 18, categoryapi._pos.Y + 11),
+        Transparency = 1, ZIndex = 8, Visible = false,
+    })
     local closeText = Draw("Text", {
         Text = "x", Position = Vector2.new(categoryapi._pos.X + panelW - 16, categoryapi._pos.Y + 11),
         Size = 14, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
         Transparency = 1, ZIndex = 8, Visible = false,
     })
-    table.insert(categoryapi._drawings, panelBg)
-    table.insert(categoryapi._drawings, panelTitle)
-    table.insert(categoryapi._drawings, panelDivider)
-    table.insert(categoryapi._drawings, closeHit)
-    table.insert(categoryapi._drawings, closeText)
+    -- Panel drawings tracked separately for clean show/hide.
+    categoryapi._panelDrawings = { panelBg, panelTitle, panelDivider, closeHit, closeText }
+    categoryapi._closeImg, categoryapi._closeText = closeImg, closeText
+    if closeImg then table.insert(categoryapi._panelDrawings, closeImg) end
+    for _, d in ipairs(categoryapi._panelDrawings) do table.insert(categoryapi._drawings, d) end
 
     local function applyPanelPos()
         local px, py = categoryapi._pos.X, categoryapi._pos.Y
@@ -873,6 +1019,7 @@ function mainapi:CreateCategory(settings)
         panelDivider.Position = Vector2.new(px, py + 33)
         closeHit.Position = Vector2.new(px + panelW - 22, py + 9)
         closeText.Position = Vector2.new(px + panelW - 16, py + 11)
+        if closeImg then closeImg.Position = Vector2.new(px + panelW - 18, py + 11) end
         categoryapi._moduleLayout.clipPos = Vector2.new(px, py + 38)
         categoryapi._moduleLayout.clipSize = Vector2.new(panelW, panelH - 38)
         categoryapi._moduleLayout.startY = py + 38
@@ -918,9 +1065,11 @@ function mainapi:CreateCategory(settings)
 
     function categoryapi:Expand(check)
         self.Expanded = check
-        for _, d in ipairs({ panelBg, panelTitle, panelDivider, closeHit, closeText }) do
+        for _, d in ipairs(self._panelDrawings) do
             d.Visible = check and mainapi.GUIVisible
         end
+        -- If a close-icon image loaded, keep the text "x" hidden.
+        if closeImg and closeText then closeText.Visible = false end
         if check then
             tweenProperty(entryArrow, "Position", Vector2.new(sidebarX() + sidebarW - 14, sidebarEntryY() + 11), 0.16)
             tweenProperty(entryText, "Color", accentColor(), 0.16)
@@ -959,6 +1108,10 @@ function mainapi:CreateCategory(settings)
             Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16),
             Transparency = 1, ZIndex = 7, Visible = false,
         })
+        local rowDotsImg = DrawImage(Assets.Dots, {
+            Size = Vector2.new(14, 14), Position = Vector2.new(rowX() + rowW - 22, rowY + 13),
+            Transparency = 1, ZIndex = 7, Visible = false,
+        })
         local rowDots = Draw("Text", {
             Text = "...", Position = Vector2.new(rowX() + rowW - 22, rowY + 11),
             Size = 14, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
@@ -976,6 +1129,7 @@ function mainapi:CreateCategory(settings)
         table.insert(moduleapi._drawings, rowBg)
         table.insert(moduleapi._drawings, rowText)
         table.insert(moduleapi._drawings, rowDots)
+        if rowDotsImg then table.insert(moduleapi._drawings, rowDotsImg) end
         table.insert(moduleapi._drawings, bindBg)
         table.insert(moduleapi._drawings, bindText)
 
@@ -991,6 +1145,7 @@ function mainapi:CreateCategory(settings)
                 rowBg.Position = Vector2.new(rowX(), y)
                 rowText.Position = Vector2.new(rowX() + 12, y + 11)
                 rowDots.Position = Vector2.new(rowX() + rowW - 22, y + 11)
+                if rowDotsImg then rowDotsImg.Position = Vector2.new(rowX() + rowW - 22, y + 13) end
                 childrenContainer._layout.startY = y + rowH
                 local totalChildH = 0
                 for _, child in ipairs(childrenContainer._layout.children) do
@@ -1004,7 +1159,12 @@ function mainapi:CreateCategory(settings)
                 local vis = moduleapi._visible and isVisible
                 rowBg.Visible = vis
                 rowText.Visible = vis
-                rowDots.Visible = vis
+                if rowDotsImg then
+                    rowDotsImg.Visible = vis
+                    rowDots.Visible = false
+                else
+                    rowDots.Visible = vis
+                end
                 bindBg.Visible = vis and #moduleapi.Bind > 0
                 bindText.Visible = vis and #moduleapi.Bind > 0
                 if #moduleapi.Bind > 0 then
@@ -1951,10 +2111,89 @@ function mainapi:LoadOptions(object, savedOptions)
 end
 
 -- ============================================================
+-- 20b. SETTINGS MENU (built-in)
+-- ============================================================
+-- Creates a "Settings" category (with the uploaded gear icon) exposing the
+-- core GUI options: accent color, rainbow, menu keybind, notifications, and
+-- config save/load/reset. Reuses the standard component factories so it
+-- behaves exactly like a user-defined category.
+function mainapi:CreateSettings()
+    if self.Categories["Settings"] then return self.Categories["Settings"] end
+
+    local settings = self:CreateCategory({ Name = "Settings", Icon = Assets.Settings })
+
+    -- ---- Interface module ----
+    local interface = settings:CreateModule({ Name = "Interface", Tooltip = "Customize the menu" })
+
+    interface:CreateColorSlider({
+        Name = "GUI Color",
+        Default = Color3.fromHSV(self.GUIColor.Hue, self.GUIColor.Sat, self.GUIColor.Value),
+        Function = function(c)
+            local h, s, v = c:ToHSV()
+            self.GUIColor.Hue, self.GUIColor.Sat, self.GUIColor.Value = h, s, v
+            self:UpdateGUI(h, s, v)
+        end,
+    })
+
+    interface:CreateToggle({
+        Name = "Rainbow",
+        Default = self.GUIColor.Rainbow,
+        Function = function(on) self.GUIColor.Rainbow = on end,
+    })
+
+    local menuKey = interface:CreateKeybind({
+        Name = "Menu Key",
+        Default = (self.Keybind and self.Keybind[1]) or "RightShift",
+    })
+    -- Rebinding the menu key updates the global GUI toggle keybind.
+    local origMenuSet = menuKey.Set
+    function menuKey:Set(key, silent)
+        origMenuSet(self, key, silent)
+        mainapi.Keybind = (key and key ~= "") and { key } or {}
+    end
+
+    interface:CreateToggle({
+        Name = "Notifications",
+        Default = self.Notifications.Enabled,
+        Function = function(on) self.Notifications.Enabled = on end,
+    })
+
+    -- ---- Config module ----
+    local config = settings:CreateModule({ Name = "Config", Tooltip = "Save / load your setup" })
+
+    config:CreateButton({
+        Name = "Save Config",
+        Function = function()
+            self:Save()
+            self:CreateNotification("Config", "Configuration saved.", 3, "info")
+        end,
+    })
+    config:CreateButton({
+        Name = "Load Config",
+        Function = function()
+            local ok = self:Load()
+            self:CreateNotification("Config", ok and "Configuration loaded." or "No saved config found.", 3, ok and "info" or "warning")
+        end,
+    })
+    config:CreateButton({
+        Name = "Reset Defaults",
+        Function = function()
+            self.GUIColor.Hue, self.GUIColor.Sat, self.GUIColor.Value = 0.46, 0.96, 0.52
+            self.GUIColor.Rainbow = false
+            self:UpdateGUI(self.GUIColor.Hue, self.GUIColor.Sat, self.GUIColor.Value)
+            self:CreateNotification("Config", "Reset to defaults.", 3, "warning")
+        end,
+    })
+
+    return settings
+end
+
+-- ============================================================
 -- 21. STARTUP
 -- ============================================================
 mainapi.Loaded = true
 startRenderLoop()
 mainapi:CreateGUI()
+mainapi:CreateSettings()
 
 return mainapi
