@@ -95,9 +95,9 @@ local mainapi = {
 -- 4. UIPALLET / COLOR HELPERS
 -- ============================================================
 local uipallet = {
-    -- Clean neutral dark theme tuned to the VapeV4 reference screenshots.
-    Main  = Color3.fromRGB(22, 22, 24),
-    Text  = Color3.fromRGB(210, 210, 214),
+    -- Exact VapeV4 dark theme colors.
+    Main  = Color3.fromRGB(26, 25, 26),
+    Text  = Color3.fromRGB(200, 200, 200),
     Font  = Drawing.Fonts.UI,
     Tween = 0.16,
 }
@@ -696,7 +696,7 @@ function mainapi:UpdateGUI(hue, sat, val)
                 if entry.kind == "accent" then
                     entry.obj.Color = Color3.fromHSV(hue, sat, val)
                 elseif entry.kind == "rainbow" and self.GUIColor.Rainbow then
-                    local h2 = (hue - (entry.index * 0.075)) % 1
+                    local h2 = (hue - (entry.index * 0.025)) % 1
                     local hs, ss, vs = self:Color(h2)
                     entry.obj.Color = Color3.fromHSV(hs, ss, vs)
                 -- Enabled-module row background. In rainbow mode each row gets a
@@ -704,7 +704,8 @@ function mainapi:UpdateGUI(hue, sat, val)
                 -- it's a solid fill of the current GUI accent color.
                 elseif entry.kind == "rowbg" then
                     if self.GUIColor.Rainbow then
-                        local h2 = (hue - (entry.index * 0.075)) % 1
+                        -- VapeV4 uses 0.025 offset per module index
+                        local h2 = (hue - (entry.index * 0.025)) % 1
                         local hs, ss, vs = self:Color(h2)
                         entry.obj.Color = Color3.fromHSV(hs, ss, vs)
                     else
@@ -714,9 +715,8 @@ function mainapi:UpdateGUI(hue, sat, val)
                 -- it stays readable on bright backgrounds.
                 elseif entry.kind == "rowtext" then
                     if self.GUIColor.Rainbow then
-                        local h2 = (hue - (entry.index * 0.075)) % 1
-                        local hs, ss, vs = self:Color(h2)
-                        entry.obj.Color = self:TextColor(hs, ss, vs)
+                        -- VapeV4: dark text (0.19) on rainbow-colored rows
+                        entry.obj.Color = Color3.new(0.19, 0.19, 0.19)
                     else
                         entry.obj.Color = self:TextColor(hue, sat, val)
                     end
@@ -747,6 +747,7 @@ function mainapi:ToggleGUI()
             if d then pcall(function() d.Visible = vis end) end
         end
     end
+    -- headerDivider is tracked in _clickguiRoot above
     for _, cat in pairs(self.Categories) do
         -- Sidebar entry always follows the GUI visibility.
         for _, d in ipairs(cat._sidebarDrawings or {}) do
@@ -869,27 +870,28 @@ function mainapi:CreateArraylist()
         Transparency = 0.45, ZIndex = 40, Visible = false,
     })
 
-    -- "VAPE" + "V4" header
+    -- "VAPE" + "V4" header (matches VapeV4 TextGUI style: VAPE in accent, V4 in accent too)
     arraylist.title = Draw("Text", {
-        Text = "VAPE", Position = Vector2.new(0, 0), Size = 18,
+        Text = "VAPE", Position = Vector2.new(0, 0), Size = 20,
         Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1,
         ZIndex = 42, Visible = false, Center = false,
     })
     arraylist.titleSub = Draw("Text", {
-        Text = "V4", Position = Vector2.new(0, 0), Size = 18,
-        Font = Drawing.Fonts.Plex, Color = uipallet.Text, Transparency = 1,
+        Text = "V4", Position = Vector2.new(0, 0), Size = 16,
+        Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1,
         ZIndex = 42, Visible = false, Center = false,
     })
     self:registerThemed(arraylist.title, "accent")
+    self:registerThemed(arraylist.titleSub, "accent")
 
     for i = 1, ARRAY_POOL do
         local txt = Draw("Text", {
-            Text = "", Position = Vector2.new(0, 0), Size = 15,
+            Text = "", Position = Vector2.new(0, 0), Size = 14,
             Font = Drawing.Fonts.UI, Color = accentColor(), Transparency = 1,
             ZIndex = 42, Visible = false, Center = false,
         })
         local bar = Draw("Square", {
-            Size = Vector2.new(2, 16), Position = Vector2.new(0, 0),
+            Size = Vector2.new(2, 18), Position = Vector2.new(0, 0),
             Color = accentColor(), Filled = true, Transparency = 1,
             ZIndex = 42, Visible = false,
         })
@@ -929,17 +931,19 @@ function mainapi:_renderArraylist()
     local rightX = vp.X - margin
 
     local enabled = self.TextGUI.Enabled
-    -- Header
-    local titleW = enabled and (measureText(arraylist.title, 48) + 4 + measureText(arraylist.titleSub, 22)) or 0
+    -- Header (VAPE + V4 text, right-aligned, top-right corner)
+    local lineH = 20
     local startY = 10
+    local titleW = enabled and (measureText(arraylist.title, 52) + 2 + measureText(arraylist.titleSub, 22)) or 0
     if arraylist.title then
         arraylist.title.Visible = enabled
         arraylist.titleSub.Visible = enabled
         if enabled then
             local subW = measureText(arraylist.titleSub, 22)
-            local mainW = measureText(arraylist.title, 48)
-            arraylist.titleSub.Position = Vector2.new(rightX - subW, startY)
+            local mainW = measureText(arraylist.title, 52)
+            -- "V4" immediately right of "VAPE" with 1px gap
             arraylist.title.Position = Vector2.new(rightX - subW - 2 - mainW, startY)
+            arraylist.titleSub.Position = Vector2.new(rightX - subW, startY + 4)
         end
     end
 
@@ -953,13 +957,13 @@ function mainapi:_renderArraylist()
             local w = measureText(line.txt, #data * 7)
             if w > maxW then maxW = w end
             line.txt.Position = Vector2.new(rightX - w - 6, y)
-            line.bar.Position = Vector2.new(rightX - 3, y)
-            line.bar.Size = Vector2.new(2, 16)
+            line.bar.Position = Vector2.new(rightX - 3, y + 1)
+            line.bar.Size = Vector2.new(2, 18)
 
-            -- per-line color
+            -- per-line color (VapeV4 uses 0.025 offset per index)
             local col
             if self.GUIColor.Rainbow then
-                local h2 = (self.GUIColor.Hue - ((i - 1) * 0.075)) % 1
+                local h2 = (self.GUIColor.Hue - ((i - 1) * 0.025)) % 1
                 col = Color3.fromHSV(self:Color(h2))
             else
                 col = accentColor()
@@ -994,30 +998,35 @@ function mainapi:CreateGUI()
 
     local sidebarW = 220
     self._sidebarPos = self._sidebarPos or { X = 6, Y = 60 }
-    local headerH = 33
+    local headerH = 41  -- matches VapeV4 window header height
 
     local header = Draw("Square", {
         Size = Vector2.new(sidebarW, headerH), Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y),
         Color = color.Dark(uipallet.Main, 0.02), Filled = true, Transparency = 1, ZIndex = 10, Visible = true,
     })
+    -- Thin divider line at bottom of header (matches VapeV4 style)
+    local headerDivider = Draw("Square", {
+        Size = Vector2.new(sidebarW, 1), Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y + headerH),
+        Color = Color3.new(1, 1, 1), Filled = true, Transparency = 0.93, ZIndex = 11, Visible = true,
+    })
     -- Prefer the uploaded GitHub logo image; fall back to text if it can't load.
     local logoImg = DrawImage(Assets.Logo, {
-        Size = Vector2.new(58, 16), Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9),
+        Size = Vector2.new(62, 18), Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 11),
         Transparency = 1, ZIndex = 11, Visible = true,
     })
     local logo = Draw("Text", {
-        Text = "Vape", Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9),
+        Text = "Vape", Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 12),
         Size = 16, Font = Drawing.Fonts.Plex, Color = accentColor(), Transparency = 1, ZIndex = 11,
         Visible = logoImg == nil,
     })
     -- Settings gear button (uses the uploaded settings icon) opens the Settings panel.
     local gearImg = DrawImage(Assets.Settings, {
-        Size = Vector2.new(16, 16), Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 9),
+        Size = Vector2.new(14, 14), Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 14),
         Transparency = 1, ZIndex = 12, Visible = true,
     })
     local gearText = Draw("Text", {
-        Text = "*", Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 8),
-        Size = 18, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43),
+        Text = "*", Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 12),
+        Size = 16, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
         Transparency = 1, ZIndex = 12, Visible = gearImg == nil,
     })
     local versionLabel = Draw("Text", {
@@ -1029,10 +1038,10 @@ function mainapi:CreateGUI()
 
     -- Gear hit-target: toggle the Settings category open/closed.
     registerHit(
-        function() return Vector2.new(self._sidebarPos.X + sidebarW - 28, self._sidebarPos.Y + 7), Vector2.new(20, 20) end,
+        function() return Vector2.new(self._sidebarPos.X + sidebarW - 30, self._sidebarPos.Y + 10), Vector2.new(22, 22) end,
         {
             onEnter = function() if gearText then tweenProperty(gearText, "Color", uipallet.Text, 0.16) end end,
-            onLeave = function() if gearText then tweenProperty(gearText, "Color", color.Dark(uipallet.Text, 0.43), 0.16) end end,
+            onLeave = function() if gearText then tweenProperty(gearText, "Color", color.Light(uipallet.Main, 0.37), 0.16) end end,
             onClick = function()
                 local s = self.Categories["Settings"]
                 if s then s:Expand(not s.Expanded) end
@@ -1040,7 +1049,7 @@ function mainapi:CreateGUI()
         }
     )
 
-    self._clickguiRoot = { header, logo, versionLabel, gearText }
+    self._clickguiRoot = { header, headerDivider, logo, versionLabel, gearText }
     if logoImg then table.insert(self._clickguiRoot, logoImg) end
     if gearImg then table.insert(self._clickguiRoot, gearImg) end
     self._headerLogoImg = logoImg
@@ -1061,10 +1070,11 @@ function mainapi:CreateGUI()
             self._sidebarPos.X = math.clamp(m.X - dragState.offset.X, 0, Camera.ViewportSize.X - sidebarW)
             self._sidebarPos.Y = math.clamp(m.Y - dragState.offset.Y, 0, Camera.ViewportSize.Y - headerH)
             header.Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y)
-            logo.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9)
-            if logoImg then logoImg.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 9) end
-            if gearImg then gearImg.Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 9) end
-            gearText.Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 8)
+            headerDivider.Position = Vector2.new(self._sidebarPos.X, self._sidebarPos.Y + headerH)
+            logo.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 12)
+            if logoImg then logoImg.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + 11) end
+            if gearImg then gearImg.Position = Vector2.new(self._sidebarPos.X + sidebarW - 26, self._sidebarPos.Y + 14) end
+            gearText.Position = Vector2.new(self._sidebarPos.X + sidebarW - 22, self._sidebarPos.Y + 12)
             versionLabel.Position = Vector2.new(self._sidebarPos.X + 11, self._sidebarPos.Y + headerH - 1)
             if self._sidebarEntryUpdaters then
                 for _, upd in pairs(self._sidebarEntryUpdaters) do pcall(upd) end
@@ -1096,7 +1106,7 @@ function mainapi:CreateCategory(settings)
     for _ in pairs(self.Categories) do sidebarIndex = sidebarIndex + 1 end
 
     if not self._sidebarPos then self._sidebarPos = { X = 6, Y = 60 } end
-    local sidebarW, entryH, headerH = 220, 40, 33
+    local sidebarW, entryH, headerH = 220, 41, 41
     local function sidebarEntryY() return self._sidebarPos.Y + headerH + 4 + sidebarIndex * (entryH + 2) end
     local function sidebarX() return self._sidebarPos.X end
 
@@ -1107,22 +1117,22 @@ function mainapi:CreateCategory(settings)
     -- Optional category icon (uploaded to GitHub). When present the label is
     -- shifted right to make room for a 16x16 icon.
     local entryIcon = settings.Icon and DrawImage(settings.Icon, {
-        Size = Vector2.new(16, 16), Position = Vector2.new(sidebarX() + 12, sidebarEntryY() + 12),
+        Size = Vector2.new(16, 16), Position = Vector2.new(sidebarX() + 12, sidebarEntryY() + 13),
         Transparency = 1, ZIndex = 11, Visible = true,
     }) or nil
     local textLeft = entryIcon and 36 or 12
 
     local entryText = Draw("Text", {
-        Text = settings.Name, Position = Vector2.new(sidebarX() + textLeft, sidebarEntryY() + 11),
-        Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16),
+        Text = settings.Name, Position = Vector2.new(sidebarX() + textLeft, sidebarEntryY() + 13),
+        Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16),
         Transparency = 1, ZIndex = 11, Visible = true,
     })
     local entryArrowImg = DrawImage(Assets.RightArrow, {
-        Size = Vector2.new(10, 10), Position = Vector2.new(sidebarX() + sidebarW - 20, sidebarEntryY() + 14),
+        Size = Vector2.new(10, 10), Position = Vector2.new(sidebarX() + sidebarW - 20, sidebarEntryY() + 15),
         Transparency = 1, ZIndex = 11, Visible = true,
     })
     local entryArrow = Draw("Text", {
-        Text = ">", Position = Vector2.new(sidebarX() + sidebarW - 18, sidebarEntryY() + 11),
+        Text = ">", Position = Vector2.new(sidebarX() + sidebarW - 18, sidebarEntryY() + 13),
         Size = 12, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
         Transparency = 1, ZIndex = 11, Visible = entryArrowImg == nil,
     })
@@ -1137,10 +1147,10 @@ function mainapi:CreateCategory(settings)
     local function updateEntryPos()
         local ex, ey = sidebarX(), sidebarEntryY()
         entryBg.Position = Vector2.new(ex, ey)
-        if entryIcon then entryIcon.Position = Vector2.new(ex + 12, ey + 12) end
-        entryText.Position = Vector2.new(ex + textLeft, ey + 11)
-        entryArrow.Position = Vector2.new(ex + sidebarW - (categoryapi.Expanded and 14 or 18), ey + 11)
-        if entryArrowImg then entryArrowImg.Position = Vector2.new(ex + sidebarW - 20, ey + 14) end
+        if entryIcon then entryIcon.Position = Vector2.new(ex + 12, ey + 13) end
+        entryText.Position = Vector2.new(ex + textLeft, ey + 13)
+        entryArrow.Position = Vector2.new(ex + sidebarW - (categoryapi.Expanded and 14 or 18), ey + 13)
+        if entryArrowImg then entryArrowImg.Position = Vector2.new(ex + sidebarW - 20, ey + 15) end
     end
     self._sidebarEntryUpdaters = self._sidebarEntryUpdaters or {}
     self._sidebarEntryUpdaters[categoryapi] = updateEntryPos
@@ -1164,19 +1174,13 @@ function mainapi:CreateCategory(settings)
         }
     )
 
-    -- Tile panels side-by-side to the right of the sidebar (VapeV4 layout)
-    -- instead of stacking them at a 16px diagonal offset (which caused every
-    -- open panel to overlap into an unreadable pile). Wrap to a new row only
-    -- when the viewport runs out of horizontal room.
-    local panelStartX = (self._sidebarPos and self._sidebarPos.X or 6) + 220 + 12
-    local colW = categoryapi._panelSize.W + 8
-    local vpW = (Camera and Camera.ViewportSize and Camera.ViewportSize.X) or 1280
-    local perRow = math.max(1, math.floor((vpW - panelStartX) / colW))
-    local col = sidebarIndex % perRow
-    local rowI = math.floor(sidebarIndex / perRow)
+    -- VapeV4: all panels default to X=236 (right of 220px sidebar + 16px gap),
+    -- stacked at the same position. Users drag them apart as needed.
+    -- A small cascade offset (sidebarIndex * 16) avoids exact overlap on first open.
+    local panelDefaultX = (self._sidebarPos and self._sidebarPos.X or 6) + 220 + 16
     categoryapi._pos = {
-        X = panelStartX + col * colW,
-        Y = 60 + rowI * (categoryapi._panelSize.H + 10),
+        X = panelDefaultX + sidebarIndex * 16,
+        Y = 60 + sidebarIndex * 16,
     }
     local panelW, panelH = categoryapi._panelSize.W, categoryapi._panelSize.H
 
@@ -1185,47 +1189,54 @@ function mainapi:CreateCategory(settings)
         Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 5, Visible = false,
     })
     local panelTitle = Draw("Text", {
-        Text = settings.Name, Position = Vector2.new(categoryapi._pos.X + 12, categoryapi._pos.Y + 11),
+        Text = settings.Name, Position = Vector2.new(categoryapi._pos.X + 40, categoryapi._pos.Y + 13),
         Size = 13, Font = Drawing.Fonts.UI, Color = uipallet.Text, Transparency = 1, ZIndex = 6, Visible = false,
     })
+    -- Panel category icon
+    local panelIcon = settings.Icon and DrawImage(settings.Icon, {
+        Size = Vector2.new(18, 18), Position = Vector2.new(categoryapi._pos.X + 12, categoryapi._pos.Y + 12),
+        Transparency = 1, ZIndex = 6, Visible = false,
+    }) or nil
     local panelDivider = Draw("Square", {
-        Size = Vector2.new(panelW, 1), Position = Vector2.new(categoryapi._pos.X, categoryapi._pos.Y + 33),
+        Size = Vector2.new(panelW, 1), Position = Vector2.new(categoryapi._pos.X, categoryapi._pos.Y + 37),
         Color = Color3.new(1, 1, 1), Filled = true, Transparency = 0.93, ZIndex = 6, Visible = false,
     })
     local closeHit = Draw("Square", {
-        Size = Vector2.new(20, 20), Position = Vector2.new(categoryapi._pos.X + panelW - 22, categoryapi._pos.Y + 9),
+        Size = Vector2.new(24, 24), Position = Vector2.new(categoryapi._pos.X + panelW - 30, categoryapi._pos.Y + 9),
         Color = Color3.new(0, 0, 0), Filled = true, Transparency = 0, ZIndex = 7, Visible = false,
     })
     local closeImg = DrawImage(Assets.Close, {
-        Size = Vector2.new(12, 12), Position = Vector2.new(categoryapi._pos.X + panelW - 18, categoryapi._pos.Y + 11),
+        Size = Vector2.new(14, 14), Position = Vector2.new(categoryapi._pos.X + panelW - 26, categoryapi._pos.Y + 14),
         Transparency = 1, ZIndex = 8, Visible = false,
     })
     local closeText = Draw("Text", {
-        Text = "x", Position = Vector2.new(categoryapi._pos.X + panelW - 16, categoryapi._pos.Y + 11),
+        Text = "x", Position = Vector2.new(categoryapi._pos.X + panelW - 20, categoryapi._pos.Y + 13),
         Size = 14, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
         Transparency = 1, ZIndex = 8, Visible = false,
     })
     -- Panel drawings tracked separately for clean show/hide.
     categoryapi._panelDrawings = { panelBg, panelTitle, panelDivider, closeHit, closeText }
     categoryapi._closeImg, categoryapi._closeText = closeImg, closeText
+    if panelIcon then table.insert(categoryapi._panelDrawings, panelIcon) end
     if closeImg then table.insert(categoryapi._panelDrawings, closeImg) end
     for _, d in ipairs(categoryapi._panelDrawings) do table.insert(categoryapi._drawings, d) end
 
     local function applyPanelPos()
         local px, py = categoryapi._pos.X, categoryapi._pos.Y
         panelBg.Position = Vector2.new(px, py)
-        panelTitle.Position = Vector2.new(px + 12, py + 11)
-        panelDivider.Position = Vector2.new(px, py + 33)
-        closeHit.Position = Vector2.new(px + panelW - 22, py + 9)
-        closeText.Position = Vector2.new(px + panelW - 16, py + 11)
-        if closeImg then closeImg.Position = Vector2.new(px + panelW - 18, py + 11) end
-        categoryapi._moduleLayout.clipPos = Vector2.new(px, py + 38)
-        categoryapi._moduleLayout.clipSize = Vector2.new(panelW, panelH - 38)
-        categoryapi._moduleLayout.startY = py + 38
+        panelTitle.Position = Vector2.new(px + 40, py + 13)
+        if panelIcon then panelIcon.Position = Vector2.new(px + 12, py + 12) end
+        panelDivider.Position = Vector2.new(px, py + 37)
+        closeHit.Position = Vector2.new(px + panelW - 30, py + 9)
+        closeText.Position = Vector2.new(px + panelW - 20, py + 13)
+        if closeImg then closeImg.Position = Vector2.new(px + panelW - 26, py + 14) end
+        categoryapi._moduleLayout.clipPos = Vector2.new(px, py + 41)
+        categoryapi._moduleLayout.clipSize = Vector2.new(panelW, panelH - 41)
+        categoryapi._moduleLayout.startY = py + 41
     end
 
     registerHit(
-        function() return Vector2.new(categoryapi._pos.X + panelW - 22, categoryapi._pos.Y + 9), Vector2.new(20, 20) end,
+        function() return Vector2.new(categoryapi._pos.X + panelW - 30, categoryapi._pos.Y + 9), Vector2.new(24, 24) end,
         {
             onEnter = function() tweenProperty(closeText, "Color", uipallet.Text, 0.16) end,
             onLeave = function() tweenProperty(closeText, "Color", color.Light(uipallet.Main, 0.37), 0.16) end,
@@ -1257,9 +1268,9 @@ function mainapi:CreateCategory(settings)
     end)
 
     local moduleLayout, moduleLayoutId = createLayout({
-        startY = categoryapi._pos.Y + 38, padding = 0,
-        clipPos = Vector2.new(categoryapi._pos.X, categoryapi._pos.Y + 38),
-        clipSize = Vector2.new(panelW, panelH - 38),
+        startY = categoryapi._pos.Y + 41, padding = 0,
+        clipPos = Vector2.new(categoryapi._pos.X, categoryapi._pos.Y + 41),
+        clipSize = Vector2.new(panelW, panelH - 41),
     })
     categoryapi._moduleLayout = moduleLayout
     categoryapi._moduleLayoutId = moduleLayoutId
@@ -1272,10 +1283,10 @@ function mainapi:CreateCategory(settings)
         -- If a close-icon image loaded, keep the text "x" hidden.
         if closeImg and closeText then closeText.Visible = false end
         if check then
-            tweenProperty(entryArrow, "Position", Vector2.new(sidebarX() + sidebarW - 14, sidebarEntryY() + 11), 0.16)
+            tweenProperty(entryArrow, "Position", Vector2.new(sidebarX() + sidebarW - 14, sidebarEntryY() + 13), 0.16)
             tweenProperty(entryText, "Color", accentColor(), 0.16)
         else
-            tweenProperty(entryArrow, "Position", Vector2.new(sidebarX() + sidebarW - 18, sidebarEntryY() + 11), 0.16)
+            tweenProperty(entryArrow, "Position", Vector2.new(sidebarX() + sidebarW - 18, sidebarEntryY() + 13), 0.16)
             tweenProperty(entryText, "Color", color.Dark(uipallet.Text, 0.16), 0.16)
         end
         for _, mod in ipairs(self._moduleList) do mod:_setVisible(check and mainapi.GUIVisible) end
@@ -1304,18 +1315,24 @@ function mainapi:CreateCategory(settings)
             Size = Vector2.new(rowW, rowH), Position = Vector2.new(rowX(), rowY),
             Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 6, Visible = false,
         })
+        -- Bottom divider shown only when module is enabled (matches VapeV4)
+        local rowDivider = Draw("Square", {
+            Size = Vector2.new(rowW, 1), Position = Vector2.new(rowX(), rowY + rowH - 1),
+            Color = Color3.new(0, 0, 0), Filled = true, Transparency = 0.85, ZIndex = 7, Visible = false,
+        })
         local rowText = Draw("Text", {
-            Text = moduleSettings.Name, Position = Vector2.new(rowX() + 12, rowY + 11),
+            -- VapeV4 indents module names ~44px from left (matching '            '..name)
+            Text = moduleSettings.Name, Position = Vector2.new(rowX() + 44, rowY + 13),
             Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16),
             Transparency = 1, ZIndex = 7, Visible = false,
         })
         local rowDotsImg = DrawImage(Assets.Dots, {
-            Size = Vector2.new(14, 14), Position = Vector2.new(rowX() + rowW - 22, rowY + 13),
+            Size = Vector2.new(4, 14), Position = Vector2.new(rowX() + rowW - 22, rowY + 13),
             Transparency = 1, ZIndex = 7, Visible = false,
         })
         local rowDots = Draw("Text", {
-            Text = "...", Position = Vector2.new(rowX() + rowW - 22, rowY + 11),
-            Size = 14, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
+            Text = "...", Position = Vector2.new(rowX() + rowW - 22, rowY + 13),
+            Size = 13, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37),
             Transparency = 1, ZIndex = 7, Visible = false,
         })
         local bindBg = Draw("Square", {
@@ -1328,6 +1345,7 @@ function mainapi:CreateCategory(settings)
             Transparency = 1, ZIndex = 8, Visible = false, Center = true,
         })
         table.insert(moduleapi._drawings, rowBg)
+        table.insert(moduleapi._drawings, rowDivider)
         table.insert(moduleapi._drawings, rowText)
         table.insert(moduleapi._drawings, rowDots)
         if rowDotsImg then table.insert(moduleapi._drawings, rowDotsImg) end
@@ -1352,8 +1370,9 @@ function mainapi:CreateCategory(settings)
             apply = function(y, isVisible)
                 rowY = y
                 rowBg.Position = Vector2.new(rowX(), y)
-                rowText.Position = Vector2.new(rowX() + 12, y + 11)
-                rowDots.Position = Vector2.new(rowX() + rowW - 22, y + 11)
+                rowDivider.Position = Vector2.new(rowX(), y + rowH - 1)
+                rowText.Position = Vector2.new(rowX() + 44, y + 13)
+                rowDots.Position = Vector2.new(rowX() + rowW - 22, y + 13)
                 if rowDotsImg then rowDotsImg.Position = Vector2.new(rowX() + rowW - 22, y + 13) end
                 childrenContainer._layout.startY = y + rowH
                 local totalChildH = 0
@@ -1367,6 +1386,8 @@ function mainapi:CreateCategory(settings)
 
                 local vis = moduleapi._visible and isVisible
                 rowBg.Visible = vis
+                -- Bottom divider only shows when module is enabled (VapeV4 style)
+                rowDivider.Visible = vis and moduleapi.Enabled
                 rowText.Visible = vis
                 if rowDotsImg then
                     rowDotsImg.Visible = vis
@@ -1387,10 +1408,20 @@ function mainapi:CreateCategory(settings)
         layoutAdd(categoryapi._moduleLayout, layoutEntry)
 
         local rowHitId = registerHit(
-            function() return Vector2.new(rowX(), rowY), Vector2.new(rowW - 30, rowH) end,
+            function() return Vector2.new(rowX(), rowY), Vector2.new(rowW - 34, rowH) end,
             {
-                onEnter = function() if not moduleapi.Enabled then tweenProperty(rowText, "Color", uipallet.Text, 0.16) end end,
-                onLeave = function() if not moduleapi.Enabled then tweenProperty(rowText, "Color", color.Dark(uipallet.Text, 0.16), 0.16) end end,
+                onEnter = function()
+                    if not moduleapi.Enabled then
+                        tweenProperty(rowBg, "Color", color.Light(uipallet.Main, 0.02), 0.16)
+                        tweenProperty(rowText, "Color", uipallet.Text, 0.16)
+                    end
+                end,
+                onLeave = function()
+                    if not moduleapi.Enabled then
+                        tweenProperty(rowBg, "Color", uipallet.Main, 0.16)
+                        tweenProperty(rowText, "Color", color.Dark(uipallet.Text, 0.16), 0.16)
+                    end
+                end,
                 onClick = function() moduleapi:Toggle() end,
             },
             rowBg
@@ -1398,10 +1429,16 @@ function mainapi:CreateCategory(settings)
         table.insert(moduleapi._hitIds, rowHitId)
 
         local dotsHitId = registerHit(
-            function() return Vector2.new(rowX() + rowW - 28, rowY), Vector2.new(28, rowH) end,
+            function() return Vector2.new(rowX() + rowW - 34, rowY), Vector2.new(34, rowH) end,
             {
-                onEnter = function() tweenProperty(rowDots, "Color", uipallet.Text, 0.16) end,
-                onLeave = function() tweenProperty(rowDots, "Color", color.Light(uipallet.Main, 0.37), 0.16) end,
+                onEnter = function()
+                    local dotsCol = moduleapi.Enabled and Color3.new(0.19, 0.19, 0.19) or uipallet.Text
+                    tweenProperty(rowDots, "Color", dotsCol, 0.16)
+                end,
+                onLeave = function()
+                    local dotsCol = moduleapi.Enabled and Color3.fromRGB(50, 50, 50) or color.Light(uipallet.Main, 0.37)
+                    tweenProperty(rowDots, "Color", dotsCol, 0.16)
+                end,
                 onClick = function() moduleapi._expanded = not moduleapi._expanded end,
             },
             rowBg
@@ -1432,10 +1469,12 @@ function mainapi:CreateCategory(settings)
                 -- rainbow) color and the label flips to a contrasting tone.
                 self:registerThemedRow()
                 mainapi:UpdateGUI(mainapi.GUIColor.Hue, mainapi.GUIColor.Sat, mainapi.GUIColor.Value)
+                rowDivider.Visible = self._visible
             else
                 self:unregisterThemedRow()
                 tweenProperty(rowBg, "Color", uipallet.Main, 0.16)
                 tweenProperty(rowText, "Color", color.Dark(uipallet.Text, 0.16), 0.16)
+                rowDivider.Visible = false
             end
             if mainapi._updateArraylist then pcall(mainapi._updateArraylist) end
             moduleSettings.Function(self.Enabled)
@@ -1513,16 +1552,16 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
     moduleapi.Options[optionsettings.Name] = optionapi
     optionsettings.Function = optionsettings.Function or function() end
 
-    local rowH = 30
+    local rowH = 32
     local function rowX() return moduleX(moduleapi) end
     local rowW = moduleW(moduleapi)
 
     local bg = Draw("Square", { Size = Vector2.new(rowW, rowH), Position = Vector2.new(rowX(), 0), Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 7), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local knobW, knobH = 28, 15
-    local function knobX() return rowX() + rowW - 38 end
-    local track = Draw("Square", { Size = Vector2.new(knobW, knobH), Position = Vector2.new(knobX(), 8), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
-    local knob = Draw("Circle", { Radius = 5, Position = Vector2.new(knobX() + 7, 15), Color = Color3.fromRGB(235, 235, 238), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
+    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 8), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local knobW, knobH = 28, 14
+    local function knobX() return rowX() + rowW - 40 end
+    local track = Draw("Square", { Size = Vector2.new(knobW, knobH), Position = Vector2.new(knobX(), 9), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
+    local knob = Draw("Circle", { Radius = 5, Position = Vector2.new(knobX() + 7, 16), Color = Color3.fromRGB(200, 200, 200), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
 
     table.insert(optionapi._drawings, bg)
     table.insert(optionapi._drawings, label)
@@ -1535,9 +1574,9 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
         apply = function(y, isVisible)
             curY = y
             bg.Position = Vector2.new(rowX(), y)
-            label.Position = Vector2.new(rowX() + 12, y + 7)
-            track.Position = Vector2.new(knobX(), y + 8)
-            knob.Position = Vector2.new(knobX() + (optionapi.Enabled and 21 or 7), y + 15)
+            label.Position = Vector2.new(rowX() + 12, y + 8)
+            track.Position = Vector2.new(knobX(), y + 9)
+            knob.Position = Vector2.new(knobX() + (optionapi.Enabled and 21 or 7), y + 16)
             local vis = isVisible
             bg.Visible = vis; label.Visible = vis; track.Visible = vis; knob.Visible = vis
         end,
@@ -1561,10 +1600,12 @@ function mainapi._components.Toggle(moduleapi, optionsettings)
         local ac = rainbow and Color3.fromHSV(mainapi:Color((mainapi.GUIColor.Hue - (self.Index * 0.075)) % 1)) or accentColor()
         if self.Enabled then
             tweenProperty(track, "Color", ac, 0.16)
+            tweenProperty(knob, "Color", Color3.fromRGB(240, 240, 240), 0.16)
             tweenProperty(knob, "Position", Vector2.new(knobX() + 21, knob.Position.Y), 0.16)
             mainapi:registerThemed(track, "rainbow", self.Index)
         else
             tweenProperty(track, "Color", hovered and color.Light(uipallet.Main, 0.37) or color.Light(uipallet.Main, 0.14), 0.16)
+            tweenProperty(knob, "Color", Color3.fromRGB(200, 200, 200), 0.16)
             tweenProperty(knob, "Position", Vector2.new(knobX() + 7, knob.Position.Y), 0.16)
             mainapi:unregisterThemed(track)
         end
@@ -1593,7 +1634,8 @@ function mainapi._components.Button(moduleapi, optionsettings)
     local rowW = moduleW(moduleapi)
 
     local btnBg = Draw("Square", { Size = Vector2.new(rowW - 20, 27), Position = Vector2.new(rowX() + 10, 2), Color = color.Light(uipallet.Main, 0.05), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local btnLabel = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 10, 7), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false, Center = true })
+    -- Inner frame matches VapeV4's Button > bkg > label structure
+    local btnLabel = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 10 + (rowW - 20) / 2, 8), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false, Center = true })
 
     table.insert(optionapi._drawings, btnBg)
     table.insert(optionapi._drawings, btnLabel)
@@ -1604,7 +1646,7 @@ function mainapi._components.Button(moduleapi, optionsettings)
         apply = function(y, isVisible)
             curY = y
             btnBg.Position = Vector2.new(rowX() + 10, y + 2)
-            btnLabel.Position = Vector2.new(rowX() + 10 + (rowW - 20) / 2, y + 7)
+            btnLabel.Position = Vector2.new(rowX() + 10 + (rowW - 20) / 2, y + 8)
             btnBg.Visible = isVisible; btnLabel.Visible = isVisible
         end,
     })
@@ -1652,18 +1694,19 @@ function mainapi._components.Slider(moduleapi, optionsettings)
         return math.floor(v * mult + 0.5) / mult
     end
 
-    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 6), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local valueText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + rowW - 12, 6), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false })
-    local track = Draw("Square", { Size = Vector2.new(barW, barH), Position = Vector2.new(barX(), 26), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local fill = Draw("Square", { Size = Vector2.new(0, barH), Position = Vector2.new(barX(), 26), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
-    local knob = Draw("Circle", { Radius = 5, Position = Vector2.new(barX(), 28), Color = Color3.new(1, 1, 1), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
+    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 4), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local valueText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + rowW - 12, 4), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local track = Draw("Square", { Size = Vector2.new(barW, barH), Position = Vector2.new(barX(), 28), Color = color.Light(uipallet.Main, 0.034), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
+    local fill = Draw("Square", { Size = Vector2.new(0, barH), Position = Vector2.new(barX(), 28), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
+    local knob = Draw("Circle", { Radius = 6, Position = Vector2.new(barX(), 30), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
 
     table.insert(optionapi._drawings, label)
     table.insert(optionapi._drawings, valueText)
     table.insert(optionapi._drawings, track)
     table.insert(optionapi._drawings, fill)
     table.insert(optionapi._drawings, knob)
-    mainapi:registerThemed(fill, "rainbow", 0)
+    mainapi:registerThemed(fill, "accent")
+    mainapi:registerThemed(knob, "accent")
 
     local curY = 0
     local function alpha() return (optionapi.Value - minV) / (maxV - minV) end
@@ -1672,14 +1715,14 @@ function mainapi._components.Slider(moduleapi, optionsettings)
         height = rowH,
         apply = function(y, isVisible)
             curY = y
-            label.Position = Vector2.new(rowX() + 12, y + 6)
+            label.Position = Vector2.new(rowX() + 12, y + 4)
             valueText.Text = tostring(roundVal(optionapi.Value)) .. suffix
-            valueText.Position = Vector2.new(rowX() + rowW - 12 - (#valueText.Text * 7), y + 6)
-            track.Position = Vector2.new(barX(), y + 26)
+            valueText.Position = Vector2.new(rowX() + rowW - 12 - (#valueText.Text * 6), y + 4)
+            track.Position = Vector2.new(barX(), y + 28)
             local a = alpha()
             fill.Size = Vector2.new(barW * a, barH)
-            fill.Position = Vector2.new(barX(), y + 26)
-            knob.Position = Vector2.new(barX() + barW * a, y + 28)
+            fill.Position = Vector2.new(barX(), y + 28)
+            knob.Position = Vector2.new(barX() + barW * a, y + 30)
             local vis = isVisible
             label.Visible = vis; valueText.Visible = vis; track.Visible = vis; fill.Visible = vis; knob.Visible = vis
         end,
@@ -1743,15 +1786,17 @@ function mainapi._components.TwoSlider(moduleapi, optionsettings)
     local barX = function() return rowX() + 12 end
     local barW = rowW - 24
 
-    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 6), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local valueText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + rowW - 12, 6), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false })
-    local track = Draw("Square", { Size = Vector2.new(barW, 4), Position = Vector2.new(barX(), 26), Color = color.Light(uipallet.Main, 0.14), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local fill = Draw("Square", { Size = Vector2.new(0, 4), Position = Vector2.new(barX(), 26), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
-    local knobMin = Draw("Circle", { Radius = 5, Position = Vector2.new(barX(), 28), Color = Color3.new(1, 1, 1), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
-    local knobMax = Draw("Circle", { Radius = 5, Position = Vector2.new(barX() + barW, 28), Color = Color3.new(1, 1, 1), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
+    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 4), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local valueText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + rowW - 12, 4), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local track = Draw("Square", { Size = Vector2.new(barW, 4), Position = Vector2.new(barX(), 28), Color = color.Light(uipallet.Main, 0.034), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
+    local fill = Draw("Square", { Size = Vector2.new(0, 4), Position = Vector2.new(barX(), 28), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
+    local knobMin = Draw("Circle", { Radius = 6, Position = Vector2.new(barX(), 30), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
+    local knobMax = Draw("Circle", { Radius = 6, Position = Vector2.new(barX() + barW, 30), Color = accentColor(), Filled = true, Transparency = 1, ZIndex = 9, Visible = false, NumSides = 18 })
 
     for _, d in ipairs({ label, valueText, track, fill, knobMin, knobMax }) do table.insert(optionapi._drawings, d) end
-    mainapi:registerThemed(fill, "rainbow", 0)
+    mainapi:registerThemed(fill, "accent")
+    mainapi:registerThemed(knobMin, "accent")
+    mainapi:registerThemed(knobMax, "accent")
 
     local curY = 0
     local function aMin() return (optionapi.ValueMin - minV) / (maxV - minV) end
@@ -1761,14 +1806,14 @@ function mainapi._components.TwoSlider(moduleapi, optionsettings)
         height = rowH,
         apply = function(y, isVisible)
             curY = y
-            label.Position = Vector2.new(rowX() + 12, y + 6)
+            label.Position = Vector2.new(rowX() + 12, y + 4)
             valueText.Text = math.floor(optionapi.ValueMin) .. " - " .. math.floor(optionapi.ValueMax) .. suffix
-            valueText.Position = Vector2.new(rowX() + rowW - 12 - (#valueText.Text * 7), y + 6)
-            track.Position = Vector2.new(barX(), y + 26)
-            fill.Position = Vector2.new(barX() + barW * aMin(), y + 26)
+            valueText.Position = Vector2.new(rowX() + rowW - 12 - (#valueText.Text * 6), y + 4)
+            track.Position = Vector2.new(barX(), y + 28)
+            fill.Position = Vector2.new(barX() + barW * aMin(), y + 28)
             fill.Size = Vector2.new(barW * (aMax() - aMin()), 4)
-            knobMin.Position = Vector2.new(barX() + barW * aMin(), y + 28)
-            knobMax.Position = Vector2.new(barX() + barW * aMax(), y + 28)
+            knobMin.Position = Vector2.new(barX() + barW * aMin(), y + 30)
+            knobMax.Position = Vector2.new(barX() + barW * aMax(), y + 30)
             for _, d in ipairs({ label, valueText, track, fill, knobMin, knobMax }) do d.Visible = isVisible end
         end,
     })
@@ -1830,49 +1875,54 @@ function mainapi._components.Dropdown(moduleapi, optionsettings)
     moduleapi.Options[optionsettings.Name] = optionapi
     optionsettings.Function = optionsettings.Function or function() end
 
-    local rowH = 32
+    local rowH = 40
     local function rowX() return moduleX(moduleapi) end
     local rowW = moduleW(moduleapi)
-    local entryH = 24
+    local entryH = 26
 
-    local boxBg = Draw("Square", { Size = Vector2.new(rowW - 20, 26), Position = Vector2.new(rowX() + 10, 2), Color = color.Light(uipallet.Main, 0.05), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local boxLabel = Draw("Text", { Text = optionsettings.Name .. ": " .. tostring(optionapi.Value), Position = Vector2.new(rowX() + 18, 7), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local boxArrow = Draw("Text", { Text = "v", Position = Vector2.new(rowX() + rowW - 22, 6), Size = 13, Font = Drawing.Fonts.UI, Color = color.Light(uipallet.Main, 0.37), Transparency = 1, ZIndex = 8, Visible = false })
+    local boxBg = Draw("Square", { Size = Vector2.new(rowW - 20, 31), Position = Vector2.new(rowX() + 10, 4), Color = color.Light(uipallet.Main, 0.034), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
+    -- Inner button to match VapeV4's border-within-border look
+    local boxInner = Draw("Square", { Size = Vector2.new(rowW - 22, 29), Position = Vector2.new(rowX() + 11, 5), Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 8, Visible = false })
+    local boxLabel = Draw("Text", { Text = "         " .. optionsettings.Name .. " - " .. tostring(optionapi.Value), Position = Vector2.new(rowX() + 14, 11), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 9, Visible = false })
+    local boxArrow = Draw("Text", { Text = "v", Position = Vector2.new(rowX() + rowW - 20, 11), Size = 11, Font = Drawing.Fonts.UI, Color = Color3.fromRGB(140, 140, 140), Transparency = 1, ZIndex = 9, Visible = false })
 
     table.insert(optionapi._drawings, boxBg)
+    table.insert(optionapi._drawings, boxInner)
     table.insert(optionapi._drawings, boxLabel)
     table.insert(optionapi._drawings, boxArrow)
 
     -- Pre-create the expanded list rows (one Square + Text per entry)
     local rowEntries = {}
     for i, item in ipairs(list) do
-        local eBg = Draw("Square", { Size = Vector2.new(rowW - 20, entryH), Position = Vector2.new(rowX() + 10, 0), Color = color.Light(uipallet.Main, 0.02), Filled = true, Transparency = 1, ZIndex = 20, Visible = false })
-        local eTxt = Draw("Text", { Text = tostring(item), Position = Vector2.new(rowX() + 18, 0), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 21, Visible = false })
+        local eBg = Draw("Square", { Size = Vector2.new(rowW - 20, entryH), Position = Vector2.new(rowX() + 10, 0), Color = uipallet.Main, Filled = true, Transparency = 1, ZIndex = 20, Visible = false })
+        local eTxt = Draw("Text", { Text = "         " .. tostring(item), Position = Vector2.new(rowX() + 14, 0), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 21, Visible = false })
         table.insert(optionapi._drawings, eBg)
         table.insert(optionapi._drawings, eTxt)
         rowEntries[i] = { bg = eBg, txt = eTxt, item = item, y = 0 }
     end
 
     local curY = 0
-    local function dropdownHeight() return rowH + (optionapi._open and (#list * entryH + 4) or 0) end
+    local function dropdownHeight() return rowH + (optionapi._open and (#list * entryH - 4) or 0) end
 
     local layoutEntry
     layoutEntry = {
         height = rowH,
         apply = function(y, isVisible)
             curY = y
-            boxBg.Position = Vector2.new(rowX() + 10, y + 2)
-            boxLabel.Text = optionsettings.Name .. ": " .. tostring(optionapi.Value)
-            boxLabel.Position = Vector2.new(rowX() + 18, y + 7)
-            boxArrow.Position = Vector2.new(rowX() + rowW - 22, y + 6)
-            boxBg.Visible = isVisible; boxLabel.Visible = isVisible; boxArrow.Visible = isVisible
+            boxBg.Position = Vector2.new(rowX() + 10, y + 4)
+            boxInner.Position = Vector2.new(rowX() + 11, y + 5)
+            boxLabel.Text = "         " .. optionsettings.Name .. " - " .. tostring(optionapi.Value)
+            boxLabel.Position = Vector2.new(rowX() + 14, y + 11)
+            boxArrow.Position = Vector2.new(rowX() + rowW - 20, y + 11)
+            boxBg.Visible = isVisible; boxInner.Visible = isVisible
+            boxLabel.Visible = isVisible; boxArrow.Visible = isVisible
 
             local openVis = isVisible and optionapi._open
             for i, e in ipairs(rowEntries) do
-                local ey = y + 28 + (i - 1) * entryH
+                local ey = y + 36 + (i - 1) * entryH
                 e.y = ey
                 e.bg.Position = Vector2.new(rowX() + 10, ey)
-                e.txt.Position = Vector2.new(rowX() + 18, ey + 4)
+                e.txt.Position = Vector2.new(rowX() + 20, ey + 4)
                 e.txt.Color = (e.item == optionapi.Value) and accentColor() or color.Dark(uipallet.Text, 0.16)
                 e.bg.Visible = openVis; e.txt.Visible = openVis
             end
@@ -1882,10 +1932,10 @@ function mainapi._components.Dropdown(moduleapi, optionsettings)
     layoutAdd(moduleapi._children._layout, layoutEntry)
 
     local boxHit = registerHit(
-        function() return Vector2.new(rowX() + 10, curY + 2), Vector2.new(rowW - 20, 26) end,
+        function() return Vector2.new(rowX() + 10, curY + 4), Vector2.new(rowW - 20, 31) end,
         {
             onEnter = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.0875), 0.16) end,
-            onLeave = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.05), 0.16) end,
+            onLeave = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.034), 0.16) end,
             onClick = function() optionapi._open = not optionapi._open end,
         },
         boxBg
@@ -1896,6 +1946,12 @@ function mainapi._components.Dropdown(moduleapi, optionsettings)
         local hit = registerHit(
             function() return Vector2.new(rowX() + 10, e.y), Vector2.new(rowW - 20, entryH) end,
             {
+                onEnter = function()
+                    tweenProperty(e.bg, "Color", color.Light(uipallet.Main, 0.02), 0.16)
+                end,
+                onLeave = function()
+                    tweenProperty(e.bg, "Color", uipallet.Main, 0.16)
+                end,
                 onClick = function()
                     if not optionapi._open then return end
                     optionapi:Set(e.item)
@@ -1933,13 +1989,13 @@ function mainapi._components.TextBox(moduleapi, optionsettings)
     optionsettings.Function = optionsettings.Function or function() end
     local placeholder = optionsettings.Placeholder or "..."
 
-    local rowH = 34
+    local rowH = 37
     local function rowX() return moduleX(moduleapi) end
     local rowW = moduleW(moduleapi)
 
-    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 4), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local boxBg = Draw("Square", { Size = Vector2.new(rowW - 24, 18), Position = Vector2.new(rowX() + 12, 14), Color = color.Light(uipallet.Main, 0.05), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local boxText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + 16, 15), Size = 12, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false })
+    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 5), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local boxBg = Draw("Square", { Size = Vector2.new(rowW - 20, 18), Position = Vector2.new(rowX() + 10, 16), Color = color.Light(uipallet.Main, 0.02), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
+    local boxText = Draw("Text", { Text = "", Position = Vector2.new(rowX() + 14, 17), Size = 12, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false })
 
     table.insert(optionapi._drawings, label)
     table.insert(optionapi._drawings, boxBg)
@@ -1956,20 +2012,20 @@ function mainapi._components.TextBox(moduleapi, optionsettings)
         height = rowH,
         apply = function(y, isVisible)
             curY = y
-            label.Position = Vector2.new(rowX() + 12, y + 4)
-            boxBg.Position = Vector2.new(rowX() + 12, y + 16)
+            label.Position = Vector2.new(rowX() + 12, y + 5)
+            boxBg.Position = Vector2.new(rowX() + 10, y + 16)
             boxText.Text = displayText()
             boxText.Color = (optionapi.Value == "" and not optionapi._focused) and color.Light(uipallet.Main, 0.37) or color.Dark(uipallet.Text, 0.43)
-            boxText.Position = Vector2.new(rowX() + 16, y + 17)
+            boxText.Position = Vector2.new(rowX() + 14, y + 17)
             label.Visible = isVisible; boxBg.Visible = isVisible; boxText.Visible = isVisible
         end,
     })
 
     local hitId = registerHit(
-        function() return Vector2.new(rowX() + 12, curY + 16), Vector2.new(rowW - 24, 18) end,
+        function() return Vector2.new(rowX() + 10, curY + 16), Vector2.new(rowW - 20, 18) end,
         {
-            onEnter = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.0875), 0.16) end,
-            onLeave = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.05), 0.16) end,
+            onEnter = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.034), 0.16) end,
+            onLeave = function() tweenProperty(boxBg, "Color", color.Light(uipallet.Main, 0.02), 0.16) end,
             onClick = function()
                 optionapi._focused = true
                 optionapi._buffer = optionapi.Value
@@ -2154,13 +2210,13 @@ function mainapi._components.Keybind(moduleapi, optionsettings)
     moduleapi.Options[optionsettings.Name] = optionapi
     optionsettings.Function = optionsettings.Function or function() end
 
-    local rowH = 30
+    local rowH = 32
     local function rowX() return moduleX(moduleapi) end
     local rowW = moduleW(moduleapi)
 
-    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 7), Size = 14, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
-    local keyBg = Draw("Square", { Size = Vector2.new(54, 18), Position = Vector2.new(rowX() + rowW - 66, 6), Color = color.Light(uipallet.Main, 0.05), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
-    local keyTxt = Draw("Text", { Text = optionapi.Key ~= "" and optionapi.Key:upper() or "NONE", Position = Vector2.new(rowX() + rowW - 39, 7), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false, Center = true })
+    local label = Draw("Text", { Text = optionsettings.Name, Position = Vector2.new(rowX() + 12, 8), Size = 13, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.16), Transparency = 1, ZIndex = 8, Visible = false })
+    local keyBg = Draw("Square", { Size = Vector2.new(54, 18), Position = Vector2.new(rowX() + rowW - 66, 7), Color = color.Light(uipallet.Main, 0.034), Filled = true, Transparency = 1, ZIndex = 7, Visible = false })
+    local keyTxt = Draw("Text", { Text = optionapi.Key ~= "" and optionapi.Key:upper() or "NONE", Position = Vector2.new(rowX() + rowW - 39, 9), Size = 11, Font = Drawing.Fonts.UI, Color = color.Dark(uipallet.Text, 0.43), Transparency = 1, ZIndex = 8, Visible = false, Center = true })
 
     table.insert(optionapi._drawings, label)
     table.insert(optionapi._drawings, keyBg)
@@ -2171,19 +2227,19 @@ function mainapi._components.Keybind(moduleapi, optionsettings)
         height = rowH,
         apply = function(y, isVisible)
             curY = y
-            label.Position = Vector2.new(rowX() + 12, y + 7)
-            keyBg.Position = Vector2.new(rowX() + rowW - 66, y + 6)
+            label.Position = Vector2.new(rowX() + 12, y + 8)
+            keyBg.Position = Vector2.new(rowX() + rowW - 66, y + 7)
             keyTxt.Text = optionapi._binding and "..." or (optionapi.Key ~= "" and optionapi.Key:upper() or "NONE")
-            keyTxt.Position = Vector2.new(rowX() + rowW - 39, y + 7)
+            keyTxt.Position = Vector2.new(rowX() + rowW - 39, y + 9)
             label.Visible = isVisible; keyBg.Visible = isVisible; keyTxt.Visible = isVisible
         end,
     })
 
     local hitId = registerHit(
-        function() return Vector2.new(rowX() + rowW - 66, curY + 6), Vector2.new(54, 18) end,
+        function() return Vector2.new(rowX() + rowW - 66, curY + 7), Vector2.new(54, 18) end,
         {
             onEnter = function() tweenProperty(keyBg, "Color", color.Light(uipallet.Main, 0.0875), 0.16) end,
-            onLeave = function() tweenProperty(keyBg, "Color", color.Light(uipallet.Main, 0.05), 0.16) end,
+            onLeave = function() tweenProperty(keyBg, "Color", color.Light(uipallet.Main, 0.034), 0.16) end,
             onClick = function()
                 optionapi._binding = true
                 startKeyCapture(function(kc)
